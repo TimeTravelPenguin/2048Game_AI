@@ -4,20 +4,25 @@ import random
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from os import system, name
+from sys import exit
 
 import numpy as np
 import pygame
 from pygame.locals import *
 
 pygame.init()
+pygame.font.init()
 SCREEN_SIZE = 500
 screen = pygame.display.set_mode((SCREEN_SIZE, SCREEN_SIZE))
 pygame.display.set_caption("2048 Game")
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+FONT_NAME = "Consolas"
+FONT_SIZE = 30
+PYGAME_FONT = pygame.font.SysFont(FONT_NAME, FONT_SIZE)
 
-CELLS = 3
+CELLS = 5
 GRID_COORD_MARGIN_SIZE = 20
 CELL_SIZE = (SCREEN_SIZE - 2 * GRID_COORD_MARGIN_SIZE) // CELLS
 
@@ -61,6 +66,10 @@ class Game:
         self.size = size
         self.state = np.zeros((size, size))
         self.controller = controller
+        self.score = 0
+
+    def update_score(self):
+        self.score = sum(np.sum(arr) for arr in self.state)
 
     def add_tile(self) -> bool:
         # check there is an empty
@@ -117,6 +126,30 @@ class Game:
         shift_occurred = not np.array_equal(self.state, prev_state)
         return shift_occurred
 
+    def is_game_over(self):
+        # for each element in the game state, if there are no zeros,
+        # and no tile has a neighbour tile of the same value, return true
+        if 0 in self.state:
+            return False
+
+        for row_index, row in enumerate(self.state):
+            for col_index, element in enumerate(row):
+                # check up
+                if row_index > 0 and element == self.state[row_index - 1, col_index]:
+                    return False
+
+                # check down
+                if row_index < self.size - 1 and element == self.state[row_index + 1, col_index]:
+                    return False
+
+                # check left
+                if col_index > 0 and element == self.state[row_index, col_index - 1]:
+                    return False
+
+                if col_index < self.size - 1 and element == self.state[row_index, col_index + 1]:
+                    return False
+        return True
+
 
 class Grid:
     def __init__(self, surface, cellSize, axisLabels):
@@ -128,7 +161,8 @@ class Grid:
         self.grid = [[0 for i in range(self.colNb)] for j in range(self.lineNb)]
         self.font = pygame.font.SysFont('arial', 12, False)
 
-    def draw(self):
+    def draw(self, game):
+        idx = 0
         for li in range(self.lineNb + 1):
             liCoord = GRID_COORD_MARGIN_SIZE + li * CELL_SIZE
             if self.axisLabels and li < self.lineNb:
@@ -144,10 +178,24 @@ class Grid:
             pygame.draw.line(self.surface, BLACK, (colCoord, GRID_COORD_MARGIN_SIZE),
                              (colCoord, self.surface.get_height() - GRID_COORD_MARGIN_SIZE - 1))
 
+        for li in range(self.lineNb):
+            for co in range(self.colNb):
+                liCoord = int(GRID_COORD_MARGIN_SIZE + (li + 0.5) * CELL_SIZE)
+                colCoord = int(GRID_COORD_MARGIN_SIZE + (co + 0.5) * CELL_SIZE)
+                tile_text = str(int(game.state[co, li]))
+                text = PYGAME_FONT.render(tile_text, True, BLACK)
+                text_rect = text.get_rect(center=(liCoord, colCoord))
+                self.surface.blit(text, text_rect)
+
+
+def QuitGame():
+    pygame.quit()
+    exit()
+
 
 if __name__ == "__main__":
     controller = PlayerController()
-    game = Game(3, controller)
+    game = Game(CELLS, controller)
 
     gameFinished = False
 
@@ -157,7 +205,9 @@ if __name__ == "__main__":
 
     def print_game_state(game: Game):
         global loopIdx
+        game.update_score()
         print("move:", loopIdx)
+        print("score:", game.score)
         loopIdx += 1
 
         for i in game.state:
@@ -171,17 +221,15 @@ if __name__ == "__main__":
     print_game_state(game)
 
     screen.fill(WHITE)
-    grid.draw()
+    grid.draw(game)
     pygame.display.flip()
 
     while not gameFinished:
-        screen.fill(WHITE)
-        grid.draw()
-
         event = pygame.event.wait()
 
         if event.type == QUIT:
             gameFinished = True
+            QuitGame()
 
         if event.type == KEYDOWN:
             print("\n" + "=" * 20 + "\n")
@@ -200,11 +248,21 @@ if __name__ == "__main__":
             if key is not None:
                 move_made = game.shift_direction(key)
 
-            if move_made and not game.add_tile():
+            if (move_made and not game.add_tile()) or game.is_game_over():
                 gameFinished = True
 
             print_game_state(game)
 
+            screen.fill(WHITE)
+            grid.draw(game)
+
             pygame.display.flip()
-    pygame.quit()
+
+    game.update_score()
     print("\nGame Over!")
+    print("Final score:", game.score)
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                QuitGame()
